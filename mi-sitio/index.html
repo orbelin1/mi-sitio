@@ -1,15 +1,117 @@
 <!DOCTYPE html>
-<html lang="utf-8">
-    <title> Mi sitio</title>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mi sitio</title>
     <link rel="stylesheet" href="estilo.css">
-    </head>
-    <body>
-        <nav>
-            <a href="index.html">Inicio</a>
-            <a href="catalogo.html">catalogo</a>
-            <a href="acerca.html">acerca</a>
-        </nav>
-        <h1>Mi primer sitio web</h1>
-        <p>Hola, soy ORBELIN. Esta es mi pagina de inicio.</p>
-    </body>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+    <script src="supabase-config.js"></script>
+</head>
+<body>
+    <nav>
+        <a href="index.html">Inicio</a>
+        <a href="catalogo.html">catalogo</a>
+        <a href="acerca.html">acerca</a>
+    </nav>
+    <h1>Mi primer sitio web</h1>
+
+    <!-- LOGIN (se ve si NO hay sesión) -->
+    <section id="login">
+        <h2>Iniciar sesión</h2>
+        <input id="email" type="email" placeholder="correo@ejemplo.com">
+        <input id="pass" type="password" placeholder="Contraseña (mín. 6 caracteres)">
+        <button onclick="entrar()">Entrar</button>
+        <button onclick="registrar()">Crear cuenta</button>
+        <p id="m1"></p>
+    </section>
+
+    <!-- PANEL (solo se ve CON sesión) -->
+    <section id="app" class="oculto">
+        <p>Conectado como: <b id="usuario"></b></p>
+        <button onclick="salir()">Cerrar sesión</button>
+
+        <h2>Nueva solicitud</h2>
+        <input id="titulo" placeholder="Título">
+        <input id="monto" type="number" placeholder="Monto">
+        <button onclick="crearSolicitud()">Guardar</button>
+        <p id="m2"></p>
+
+        <h2>Solicitudes</h2>
+        <ul id="lista"></ul>
+    </section>
+
+<script>
+    // ---- utilidades ----
+    function val(id){ return document.getElementById(id).value.trim(); }
+    function msg(id, texto, ok){
+        const el = document.getElementById(id);
+        el.textContent = texto;
+        el.className = ok ? 'ok' : 'err';
+    }
+
+    // ---- Módulo 1: autenticación con Supabase Auth ----
+    async function registrar(){
+        const { error } = await supabase.auth.signUp({ email: val('email'), password: val('pass') });
+        if (error) return msg('m1', 'Error: ' + error.message, false);
+        msg('m1', 'Cuenta creada. Ya puedes iniciar sesión.', true);
+    }
+
+    async function entrar(){
+        const { error } = await supabase.auth.signInWithPassword({ email: val('email'), password: val('pass') });
+        if (error) return msg('m1', 'Credenciales incorrectas', false);
+        mostrarApp();
+    }
+
+    async function salir(){
+        await supabase.auth.signOut();
+        location.reload(); // vuelve a mostrar el formulario de inicio de sesión
+    }
+
+    async function mostrarApp(){
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        document.getElementById('login').classList.add('oculto');
+        document.getElementById('app').classList.remove('oculto');
+        document.getElementById('usuario').textContent = user.email;
+        cargarSolicitudes();
+    }
+
+    // ---- solicitudes ----
+    async function crearSolicitud(){
+        const titulo = val('titulo');
+        const monto = Number(val('monto'));
+        if (!titulo) return msg('m2', 'Escribe un título', false);
+
+        const { data: { user } } = await supabase.auth.getUser();
+        const { error } = await supabase.from('solicitudes').insert({ titulo, monto, usuario_email: user.email });
+        if (error) return msg('m2', 'Error: ' + error.message, false);
+        msg('m2', 'Solicitud guardada', true);
+        document.getElementById('titulo').value = '';
+        document.getElementById('monto').value = '';
+        cargarSolicitudes();
+    }
+
+    async function cargarSolicitudes(){
+        const { data, error } = await supabase.from('solicitudes')
+            .select('titulo, monto, usuario_email')
+            .order('id', { ascending: false });
+        const ul = document.getElementById('lista');
+        ul.innerHTML = '';
+        if (error) return msg('m2', 'Error: ' + error.message, false);
+        for (const s of data) {
+            const li = document.createElement('li');
+            // textContent (no innerHTML) para no ejecutar HTML que venga de la base (evita XSS)
+            li.textContent = `${s.titulo} — $${s.monto} (${s.usuario_email ?? 'sin correo'})`;
+            ul.appendChild(li);
+        }
+    }
+
+    // ---- al cargar la página: si ya hay sesión, entra directo ----
+    (async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) mostrarApp();
+    })();
+</script>
+</body>
 </html>
